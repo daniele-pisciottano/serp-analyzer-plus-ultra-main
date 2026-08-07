@@ -1,0 +1,27 @@
+[build]
+  base = "web"
+  command = "npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+[functions]
+  node_bundler = "esbuild"
+
+[dev]
+  # --prefix: `netlify dev` lancia il comando dalla root del repo, non da `base`
+  command = "npm --prefix web run dev"
+  targetPort = 5173
+  port = 8888
+
+# Le API sono servite dalle Netlify Functions sotto /api/*
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/:splat"
+  status = 200
+
+# Nessun fallback SPA: l'app non ha routing client-side (le tab sono stato
+# React, non URL), quindi viene servita solo la root. Una regola `/* ->
+# /index.html` intercetterebbe anche i moduli di Vite durante `netlify dev`.

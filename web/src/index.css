@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    @apply bg-surface-sunken text-ink font-sans;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface border border-surface-border rounded-xl shadow-card;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold
+           transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-brand text-white hover:bg-brand-600;
+  }
+  .btn-ghost {
+    @apply btn border border-surface-border bg-surface text-ink hover:bg-surface-sunken;
+  }
+  .input {
+    @apply w-full rounded-lg border border-surface-border bg-surface px-3 py-2 text-sm
+           placeholder:text-ink-faint focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand-100;
+  }
+  .label {
+    @apply block text-sm font-medium text-ink mb-1.5;
+  }
+  .hint {
+    @apply text-xs text-ink-muted mt-1.5 leading-relaxed;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+  }
+}
+
+/* Scrollbar discreta per le tabelle larghe */
+.scroll-x {
+  overflow-x: auto;
+}
+.scroll-x::-webkit-scrollbar {
+  height: 8px;
+}
+.scroll-x::-webkit-scrollbar-thumb {
+  @apply bg-surface-border rounded-full;
+}
