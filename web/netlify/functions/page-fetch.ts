@@ -125,6 +125,26 @@ export default handler(async (req) => {
   const finalUrl = res.url || target.toString()
   const host = new URL(finalUrl).hostname
 
+  // Dati strutturati: JSON-LD (incluso @graph) piu' i tipi dichiarati via microdata.
+  // Vanno letti PRIMA di rimuovere gli script: il JSON-LD vive dentro un tag
+  // <script>, e la pulizia qui sotto lo cancellerebbe insieme al JavaScript.
+  const schemaTypes = new Set<string>()
+  let hasJsonLd = false
+  $('script[type="application/ld+json"]').each((_, el) => {
+    const raw = $(el).contents().text().trim()
+    if (!raw) return
+    try {
+      collectSchemaTypes(JSON.parse(raw), schemaTypes)
+      hasJsonLd = true
+    } catch {
+      /* JSON-LD malformato sulla pagina del competitor: non e' un errore nostro */
+    }
+  })
+  $('[itemtype]').each((_, el) => {
+    const itemtype = $(el).attr('itemtype')
+    if (itemtype) schemaTypes.add(itemtype.split('/').pop() ?? itemtype)
+  })
+
   $('script, style, noscript, svg, iframe').remove()
 
   const title = cleanText($('title').first().text())
@@ -147,24 +167,6 @@ export default handler(async (req) => {
     } catch {
       /* href malformato: ignorato */
     }
-  })
-
-  // Dati strutturati: JSON-LD (incluso @graph) piu' i tipi dichiarati via microdata.
-  const schemaTypes = new Set<string>()
-  let hasJsonLd = false
-  $('script[type="application/ld+json"]').each((_, el) => {
-    const raw = $(el).contents().text().trim()
-    if (!raw) return
-    try {
-      collectSchemaTypes(JSON.parse(raw), schemaTypes)
-      hasJsonLd = true
-    } catch {
-      /* JSON-LD malformato sulla pagina del competitor: non e' un errore nostro */
-    }
-  })
-  $('[itemtype]').each((_, el) => {
-    const itemtype = $(el).attr('itemtype')
-    if (itemtype) schemaTypes.add(itemtype.split('/').pop() ?? itemtype)
   })
 
   const schemaList = [...schemaTypes]

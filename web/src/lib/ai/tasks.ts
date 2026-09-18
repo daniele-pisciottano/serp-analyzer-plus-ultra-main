@@ -221,6 +221,51 @@ Rispondi con questo JSON:
 }
 
 /** Fallback senza AI: raggruppa per parola in comune. Porting di `cluster_keywords_simple`. */
+const MIN_AUTO_CLUSTER_SIZE = 3
+
+const STOP_WORDS = new Set([
+  'come',
+  'cosa',
+  'quale',
+  'quali',
+  'quanto',
+  'ogni',
+  'alla',
+  'alle',
+  'dalla',
+  'della',
+  'delle',
+  'degli',
+  'nella',
+  'sulla',
+  'per',
+  'con',
+  'del',
+  'the',
+  'and',
+  'with',
+  'migliore',
+  'migliori',
+])
+
+/** Parole che portano significato: lunghe almeno 4 lettere e non funzionali. */
+function significantTerms(text: string): string[] {
+  return text
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((word) => word.length > 3 && !STOP_WORDS.has(word))
+}
+
+/**
+ * Confronto tollerante alle desinenze: "guida" e "guide", "scarpa" e "scarpe",
+ * "donna" e "donne" devono coincidere. Oltre le 4 lettere si ignora l'ultima.
+ */
+function sameStem(a: string, b: string): boolean {
+  if (a === b) return true
+  if (a.length < 5 || b.length < 5) return false
+  return a.slice(0, -1) === b.slice(0, -1)
+}
+
 export function clusterKeywordsSimple(
   keywords: string[],
   customClusters: string[],
@@ -228,50 +273,68 @@ export function clusterKeywordsSimple(
   const clusters = new Map<string, string[]>()
   const unassigned: string[] = []
 
+  // Una parola condivisa da piu' cluster ("scarpe" in "Scarpe uomo" e "Scarpe
+  // donna") non dice a quale dei due appartiene la keyword: pesiamo quindi ogni
+  // parola per quanto e' rara fra i nomi dei cluster, come un IDF.
+  const clusterTerms = customClusters.map((name) => ({ name, terms: significantTerms(name) }))
+  const documentFrequency = new Map<string, number>()
+  for (const { terms } of clusterTerms) {
+    for (const term of new Set(terms)) {
+      documentFrequency.set(term, (documentFrequency.get(term) ?? 0) + 1)
+    }
+  }
+  const weight = (term: string) =>
+    Math.log((customClusters.length + 1) / ((documentFrequency.get(term) ?? 0) + 1)) + 0.1
+
   for (const keyword of keywords) {
-    const lower = keyword.toLowerCase()
-    const custom = customClusters.find((c) =>
-      c
-        .toLowerCase()
-        .split(/\s+/)
-        .some((word) => word.length > 3 && lower.includes(word)),
-    )
-    if (custom) {
-      clusters.set(custom, [...(clusters.get(custom) ?? []), keyword])
+    const tokens = significantTerms(keyword)
+    const scored = clusterTerms
+      .map(({ name, terms }) => ({
+        name,
+        score: terms
+          .filter((term) => tokens.some((token) => sameStem(token, term)))
+          .reduce((sum, term) => sum + weight(term), 0),
+      }))
+      .filter((entry) => entry.score > 0)
+      .sort((a, b) => b.score - a.score)
+
+    // A parita' di punteggio la keyword e' ambigua ("scarpe da running" fra
+    // uomo e donna): meglio lasciarla ai cluster automatici che sbagliare.
+    const [best, second] = scored
+    if (best && (!second || best.score - second.score > 1e-9)) {
+      clusters.set(best.name, [...(clusters.get(best.name) ?? []), keyword])
     } else {
       unassigned.push(keyword)
     }
   }
 
   // Le restanti vengono raggruppate sulla parola piu' lunga condivisa
-  const stopWords = new Set([
-    'come',
-    'cosa',
-    'quale',
-    'per',
-    'con',
-    'del',
-    'della',
-    'the',
-    'and',
-    'migliore',
-    'migliori',
-  ])
   for (const keyword of unassigned) {
-    const words = keyword
-      .toLowerCase()
-      .split(/\s+/)
-      .filter((w) => w.length > 3 && !stopWords.has(w))
-    const head = words[0] ?? 'Generale'
+    const head = significantTerms(keyword)[0] ?? 'Generale'
     const name = head.charAt(0).toUpperCase() + head.slice(1)
     clusters.set(name, [...(clusters.get(name) ?? []), keyword])
   }
 
+  // Stessa regola del clustering AI: un cluster automatico sotto le 3 keyword non
+  // descrive un argomento, quindi le sue keyword confluiscono in "Generale".
+  // I cluster personalizzati restano anche se piccoli: sono pagine reali del sito.
   const customLower = customClusters.map((c) => c.toLowerCase())
+  const isCustom = (name: string) => customLower.includes(name.toLowerCase())
+  const general: string[] = []
+  for (const [name, kws] of [...clusters.entries()]) {
+    if (!isCustom(name) && kws.length < MIN_AUTO_CLUSTER_SIZE) {
+      general.push(...kws)
+      clusters.delete(name)
+    }
+  }
+  if (general.length > 0) {
+    clusters.set('Generale', [...(clusters.get('Generale') ?? []), ...general])
+  }
+
   return [...clusters.entries()].map(([name, kws]) => ({
     name,
     keywords: kws,
-    isCustom: customLower.includes(name.toLowerCase()),
+    isCustom: isCustom(name),
     totalVolume: 0,
   }))
 }
